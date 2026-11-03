@@ -263,6 +263,16 @@
   .chips.is-flash { animation: chipsFlash 1.2s ease; }
   @keyframes chipsFlash { 0%, 100% { box-shadow: 0 0 0 0 rgba(31, 111, 209, 0); } 30% { box-shadow: 0 0 0 6px rgba(31, 111, 209, .18); } }
   .field-hint { font-size: 13px; color: var(--blue); margin-top: 6px; }
+
+  /* Всплывающее «Номер скопирован» */
+  .toast {
+    position: fixed; left: 50%; bottom: 24px; z-index: 100; display: flex; align-items: center; gap: 8px;
+    max-width: calc(100% - 32px); padding: 12px 18px; border-radius: 12px;
+    background: #13243a; color: #fff; font-size: 15px; font-weight: 600; box-shadow: 0 10px 30px rgba(0, 0, 0, .25);
+    opacity: 0; pointer-events: none; transform: translate(-50%, 12px); transition: opacity .25s ease, transform .25s ease;
+  }
+  .toast.is-shown { opacity: 1; transform: translate(-50%, 0); }
+  .toast svg { width: 20px; height: 20px; color: #5fd08f; flex: none; }
   .input {
     width: 100%; padding: 14px 16px; font: inherit; color: var(--text);
     border: 2px solid var(--blue-line); border-radius: 10px; background: #fff; transition: border-color .2s, box-shadow .2s;
@@ -739,6 +749,8 @@
   </div>
 </footer>
 
+<div class="toast" id="toast" role="status" aria-live="polite"><svg aria-hidden="true"><use href="#i-check"/></svg><span id="toast-text"></span></div>
+
 <script>
 (function () {
   'use strict';
@@ -966,6 +978,49 @@
     if (e.key === 'Escape' && header.classList.contains('is-open')) { setMenu(false); menuBtn.focus(); }
   });
   window.matchMedia('(max-width: 1000px)').addEventListener('change', function (e) { if (!e.matches) setMenu(false); });
+
+  /* ---------- Телефон: на компьютере копируется, на телефоне копируется и открывает звонок ---------- */
+  var touchQuery = window.matchMedia('(hover: none) and (pointer: coarse)');
+  var toast = document.getElementById('toast'), toastTimer = null;
+  function showToast(text) {
+    document.getElementById('toast-text').textContent = text;
+    toast.classList.add('is-shown');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toast.classList.remove('is-shown'); }, 2200);
+  }
+  function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(text).catch(function () { return copyFallback(text); });
+    }
+    // Ошибку копирования превращаем в отказ промиса, а не в необработанное исключение
+    return new Promise(function (resolve) { copyFallback(text); resolve(); });
+  }
+  // Запасной способ для старых браузеров и страниц без https
+  function copyFallback(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+    document.body.appendChild(ta);
+    ta.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (err) {}
+    document.body.removeChild(ta);
+    if (!ok) throw new Error('copy failed');
+  }
+  document.querySelectorAll('a[href^="tel:"]').forEach(function (a) {
+    var number = formatPhone(phoneDigits(a.getAttribute('href')));
+    if (!touchQuery.matches) a.title = 'Нажмите, чтобы скопировать номер';
+    a.addEventListener('click', function (e) {
+      // На компьютере звонить не с чего — только копируем; на телефоне ссылка ещё и откроет звонок
+      var isTouchPhone = touchQuery.matches;
+      if (!isTouchPhone) e.preventDefault();
+      copyText(number).then(
+        function () { showToast('Номер ' + number + ' скопирован'); },
+        function () { if (!isTouchPhone) showToast('Номер: ' + number); }
+      );
+    });
+  });
 
   /* ---------- Ссылки меню и подвала: плавная прокрутка к разделу ---------- */
   // Скриптом, а не только href="#…": так прокрутка работает и в превью/встраивании, где якоря отключены
